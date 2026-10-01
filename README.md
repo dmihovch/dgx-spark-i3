@@ -1,8 +1,11 @@
 # i3 on NVIDIA DGX Spark (DGX OS, X11)
 
-A small, self-contained bundle that turns a fresh **DGX Spark running DGX OS**
-(Ubuntu 24.04 "Noble" base, `arm64`) into a working **i3 tiling desktop** — with
-the keyboard remapped exactly the way you asked for.
+Turns a DGX Spark running **DGX OS** (Ubuntu 24.04 "Noble" base, `arm64`) into a
+working **i3 tiling desktop**.
+
+The i3 config is a **near-verbatim copy of the upstream i3 default config**
+(`i3 4.23`), with only the modifications you asked for layered on top — nothing
+clever, nothing to fight.
 
 > **Target:** DGX OS 7 · Ubuntu 24.04 · `aarch64` · **X11** (not Wayland).
 > i3 is an X11 window manager; it will not run *inside* a Wayland session.
@@ -11,120 +14,133 @@ the keyboard remapped exactly the way you asked for.
 
 ## 1. Your keyboard preferences (what this does)
 
-You asked for three things. They are all implemented with **XKB**, so they apply
-to every application in the session, not just i3:
+Implemented with **XKB**, so they apply to every application in the session, not
+just i3:
 
 | You press (physical key) | The system delivers | XKB option applied |
 |---|---|---|
 | **Caps Lock** | **Escape** | `caps:swapescape` |
 | **Escape** | **Caps Lock** | `caps:swapescape` |
-| **Alt** | **Super** (Mod4) → becomes i3's `$mod` | `altwin:swap_alt_win` |
+| **Alt** | **Super** (Mod4) → i3's `$mod` | `altwin:swap_alt_win` |
 | **Win** | **Alt** (Mod1) | `altwin:swap_alt_win` |
 
 Net effect:
 
 * **Esc and Caps Lock are swapped.**
-* **Alt acts as the Super key** — and because i3's modifier is set to `Mod4`,
-  **Alt is your i3 `$mod` key** (so `Alt+Return` opens a terminal, `Alt+d` the
-  launcher, `Alt+1..0` switches workspaces, etc.).
-* **Win acts as Alt** (Mod1), i.e. the classic Alt behaviour.
+* **Alt acts as the Super key** — and since the config sets `set $mod Mod4`,
+  **Alt is your i3 modifier** (every stock `Mod1+<key>` binding is now `$mod+<key>`,
+  i.e. Alt-based).
+* **Win acts as Alt** (Mod1).
 
-The mapping is applied two ways for robustness:
+Applied two ways for robustness:
 
-1. `exec setxkbmap -option "caps:swapescape,altwin:swap_alt_win"` at the top of
-   `~/.config/i3/config` (always active inside the i3 session), **and**
+1. `exec setxkbmap -option "caps:swapescape,altwin:swap_alt_win"` near the top of
+   `~/.config/i3/config` (always active in the i3 session), and
 2. `~/.xinitrc` does the same for `startx` sessions.
-
-There is also an **optional** system-wide file (see
-[§6](#6-optional-remap-at-the-login-greeter-too)) that additionally remaps keys
-at the display-manager greeter.
-
-> Want to double-check the option names? `grep -i altwin /usr/share/X11/xkb/rules/evdev.lst`
-> and `grep -i 'caps:' /usr/share/X11/xkb/rules/evdev.lst`.
 
 ---
 
-## 2. Quick start
+## 2. Exactly what was changed vs. the vanilla config
+
+Everything below is the *complete* delta from upstream's default config. Nothing
+else was touched:
+
+* **Added** (top of file):
+  * `exec --no-startup-id setxkbmap -option "caps:swapescape,altwin:swap_alt_win"`
+  * `set $mod Mod4`
+* **Changed** every `Mod1+…` keybinding to `$mod+…` (focus, move, layout,
+  workspaces, reload/restart/exit, resize mode). `floating_modifier Mod1` is
+  deliberately left as `Mod1` so **physical Win** still drags floating windows.
+* **Terminal:** `$mod+Return` now runs a simple terminal:
+  ```i3config
+  set $term xterm -fa "DejaVu Sans Mono" -fs 12
+  bindsym $mod+Return exec $term
+  ```
+* **Browser:** `$mod+b` runs Firefox:
+  ```i3config
+  set $browser firefox
+  bindsym $mod+b exec --no-startup-id $browser
+  ```
+* **Status bar:** left `dock` (always visible — no auto-hide) and anchored to the
+  **bottom**:
+  ```i3config
+  bar {
+          status_command i3status
+          position bottom
+  }
+  ```
+* **Removed** the trailing `exec i3-config-wizard` line (per its own comment,
+  since we ship a config).
+* **No compositor at all** — so there is no window fading. (The upstream default
+  has no compositor either.)
+
+You can see this for yourself:
 
 ```bash
-# From this directory (keep install-i3.sh and the .conf files together, or just
-# use the script on its own — it embeds all the configs):
+diff <(curl -sL https://raw.githubusercontent.com/i3/i3/4.23/etc/config | grep -v '^#') \
+     <(grep -v '^#' config)
+```
+
+---
+
+## 3. Quick start
+
+```bash
 chmod +x install-i3.sh
 ./install-i3.sh
 ```
 
-The script will:
-
-1. `apt-get update` and install i3 + everything needed to make a bare WM a
-   daily driver (see [§4](#4-what-gets-installed)).
-2. Write the config files into the right places (backing up anything already
-   there).
-3. Print next steps.
-
-Then **log out and pick the `i3` session** at the login screen and you're done.
-
-Useful flags:
+Then **log out and pick the `i3` session** at the login screen.
 
 | Flag | Effect |
 |---|---|
-| `--persistent-keys` | Also write `/etc/X11/xorg.conf.d/00-keyboard.conf` so the remap applies at the greeter too. |
+| `--persistent-keys` | Also write `/etc/X11/xorg.conf.d/00-keyboard.conf` so the remap applies at the greeter. |
 | `--no-install` | Skip `apt`; only (re)write the config files. |
-| `--emit-config DIR` | Just dump the canonical config files into `DIR` (handy for inspecting/editing before installing). |
+| `--emit-config DIR` | Dump the canonical config files into `DIR` (handy for inspection). |
 
 ---
 
-## 3. What's in this bundle
+## 4. What's in this bundle
 
 ```
-install-i3.sh        The installer (self-contained; embeds all configs)
+install-i3.sh        The installer (self-contained; embeds the configs)
 README.md            This document
 config               i3 config            -> ~/.config/i3/config
 i3status.conf        status-bar config    -> ~/.config/i3status/config
-picom.conf           compositor config    -> ~/.config/picom/picom.conf
-screenshot.sh        Print / Alt+Print    -> ~/.config/i3/screenshot.sh
 xinitrc              startx session       -> ~/.xinitrc
 ```
 
-`config`, `i3status.conf`, `picom.conf`, `screenshot.sh` and `xinitrc` are the
-exact files the installer writes. They were generated *from* the installer
-(`./install-i3.sh --emit-config .`), so the copies here and the installed files
-never drift.
+`config`, `i3status.conf` and `xinitrc` are the exact files the installer writes
+(regenerate with `./install-i3.sh --emit-config .`), so copies never drift.
 
 ---
 
-## 4. What gets installed
-
-Grouped by purpose so you can trim the list to taste (edit the `PKGS` array in
-`install-i3.sh`):
+## 5. What gets installed
 
 * **Window manager:** `i3-wm`, `i3status`, `i3lock`
-* **X / session:** `xinit`, `x11-xserver-utils`, `x11-xkb-utils`, `xdg-utils`, `dbus-x11`
-* **Launcher / terminal:** `suckless-tools` (provides `dmenu`), `rofi`, `xterm`,
-  `rxvt-unicode` (both simple terminals — see
-  [§5.1](#51-why-xterm-and-not-alacrittykitty))
-* **Browser:** `firefox` (installed on a **best-effort** basis — see
-  [§5.2](#52-firefox-and-dgx-os-snap-caveat))
-* **Status-bar plumbing:** `network-manager-gnome` (`nm-applet`), `blueman`,
-  `pasystray`, `pulseaudio-utils` (`pactl`), `pavucontrol`, `playerctl`
-* **Desktop niceties:** `dunst`, `libnotify-bin`, `feh`, `picom`, `brightnessctl`,
-  `xss-lock`, `lxpolkit`, `gnome-keyring`
-* **Screenshots / clipboard:** `maim`, `xclip`
+* **Session / XDG:** `dex` (used by the stock config's autostart line), `xinit`,
+  `x11-xserver-utils`, `x11-xkb-utils`, `xdg-utils`, `dbus-x11`
+* **Launcher / terminals:** `suckless-tools` (`dmenu`), `rofi`, `xterm`,
+  `rxvt-unicode`
+* **Status-bar / tray plumbing:** `network-manager-gnome` (`nm-applet`),
+  `blueman`, `pasystray`, `pulseaudio-utils` (`pactl`), `pavucontrol`, `playerctl`
+* **Niceties:** `dunst`, `libnotify-bin`, `brightnessctl`, `xss-lock`, `lxpolkit`,
+  `gnome-keyring`, `maim`, `xclip`
 * **Fonts / theming:** `fonts-dejavu`, `fonts-font-awesome`, `lxappearance`
+* **Browser:** `firefox` (best effort — see [§7](#7-firefox-and-dgx-os-snap-caveat))
 
-> All of these are available for `arm64` from the Ubuntu 24.04 archives, so no
-> third-party repositories are required.
+> All available for `arm64` from the stock Ubuntu 24.04 archives; no third-party
+> repos required. There is **no compositor package** (no picom) by design.
 
 ---
 
-## 5. Day-to-day usage
-
-After logging into the i3 session:
+## 6. Day-to-day usage
 
 | Keys | Action |
 |---|---|
 | **Alt + Return** | Terminal (`xterm`) |
-| **Alt + d** | Launcher (`dmenu`) |
 | **Alt + b** | Browser (`firefox`) |
+| **Alt + d** | Launcher (`dmenu`) |
 | **Alt + h / v** | Split horizontal / vertical |
 | **Alt + s / w / e** | Stacking / tabbed / toggle-split layout |
 | **Alt + f** | Fullscreen |
@@ -134,68 +150,57 @@ After logging into the i3 session:
 | **Alt + Shift + arrows** (or `j k l ;`) | Move window |
 | **Alt + 1…0** | Switch workspace |
 | **Alt + Shift + 1…0** | Move container to workspace |
-| **Alt + r** | Enter resize mode (arrows, then `Return`/`Esc`) |
-| **Alt + Shift + x** | Lock screen |
-| **Print** / **Alt + Print** | Screenshot (full / region) → `~/Pictures/Screenshots` |
+| **Alt + r** | Resize mode (arrows, then `Return`/`Esc`) |
 | **Alt + Shift + c / r / e** | Reload / restart / exit i3 |
+| **Alt + Shift + q** | Close window |
 
-This is essentially the standard i3 keymap, so your muscle memory should mostly
-just work — the only deliberate change is that **Alt is now `$mod`**.
+This is the standard i3 keymap; the only difference is that **Alt is your `$mod`**.
 
-### 5.1 Why xterm (and not Alacritty/kitty)
+### 6.1 Why xterm (and not Alacritty/kitty)
 
-You asked for a terminal that "plays nice with Neovim" and avoids
-**kitty keyboard protocol** issues. That protocol (CSI-u / progressive keyboard
-enhancement) is implemented by **kitty, foot, WezTerm, Ghostty and Alacritty
-(0.13+)**, and it's a common source of broken key handling in Neovim and tmux.
+You asked for a terminal that "plays nice with Neovim" and avoids **kitty
+keyboard protocol** issues (CSI-u / progressive keyboard enhancement). That
+protocol is implemented by kitty, foot, WezTerm, Ghostty and **Alacritty 0.13+**,
+and it is a common cause of broken key handling in Neovim/tmux.
 
-The default here is therefore **`xterm`**, which does not implement the protocol
-at all, with **`rxvt-unicode` (`urxvt`)** installed as an equally-safe
-alternative. The default binding is set in the i3 config as:
-
-```i3config
-set $term xterm -fa "DejaVu Sans Mono" -fs 12
-```
-
-To switch to urxvt instead, change that one line to e.g.:
+The default is therefore **`xterm`**, which doesn't implement the protocol at
+all; **`rxvt-unicode` (`urxvt`)** is installed as an equally-safe alternative.
+Swap the one line if you prefer:
 
 ```i3config
 set $term urxvt -fn "xft:DejaVu Sans Mono:pixelsize=14"
 ```
 
-(Other safe, protocol-free choices: `st`, `xfce4-terminal`, `gnome-terminal`.)
-The original Alacritty package was intentionally dropped from the install list
-for this reason.
-
-### 5.2 Firefox and DGX OS (snap caveat)
-
-The **Alt + b** binding simply runs `firefox`. The installer tries
-`apt-get install firefox`, but note that on Ubuntu 24.04 that package is a
-**transitional package that installs the Firefox snap**. DGX OS images may not
-ship `snapd`, so this step is deliberately **best-effort** and never aborts the
-rest of the install.
-
-If Firefox didn't install automatically, install it however suits the box
-(`snap install firefox`, the Mozilla `apt` repo, or a Flatpak), or point the
-binding at a different browser by editing `set $browser …` in
-`~/.config/i3/config`. Verify with `command -v firefox`.
+(Other protocol-free choices: `st`, `xfce4-terminal`, `gnome-terminal`.)
 
 ---
 
-## 6. Optional: remap at the login greeter too
+## 7. Firefox and DGX OS (snap caveat)
 
-The i3-session remap does not cover the **GDM/greeter** (login screen), because
-the greeter is a separate X session. If you want Caps/Esc and Alt/Win swapped
-there too:
+The **Alt + b** binding runs `firefox`. The installer tries
+`apt-get install firefox`, but on Ubuntu 24.04 that package is a **transitional
+package that installs the Firefox snap**, and DGX OS images may not ship `snapd`.
+This step is deliberately **best-effort** and never aborts the rest of the
+install.
+
+If it didn't install, use whatever fits the box (`snap install firefox`, the
+Mozilla `apt` repo, or a Flatpak), or point the binding elsewhere by editing
+`set $browser …`. Verify with `command -v firefox`.
+
+---
+
+## 8. Optional: remap at the login greeter too
+
+The i3-session remap doesn't cover the **greeter** (login screen), which is a
+separate X session. To swap keys there as well:
 
 ```bash
 ./install-i3.sh --no-install --persistent-keys
 ```
 
-This writes:
+That writes `/etc/X11/xorg.conf.d/00-keyboard.conf`:
 
 ```ini
-# /etc/X11/xorg.conf.d/00-keyboard.conf
 Section "InputClass"
     Identifier   "system-keyboard"
     MatchIsKeyboard "on"
@@ -204,138 +209,86 @@ Section "InputClass"
 EndSection
 ```
 
-Reboot (or fully restart the display manager) to apply it system-wide. Override
-the layout with `XKB_LAYOUT=de ./install-i3.sh --persistent-keys`, etc.
+Reboot (or restart the display manager) to apply. Override the layout with
+`XKB_LAYOUT=de ./install-i3.sh --persistent-keys`.
 
 ---
 
-## 7. Verifying the keyboard mapping
+## 9. Verifying the keyboard mapping
 
 Inside the i3 session:
 
 ```bash
-# Confirm the options are active:
 setxkbmap -print | tr ',' '\n' | grep -E 'swapescape|swap_alt_win'
-
-# Interactive check — press Caps Lock, Esc, Alt and Win:
-xev
+xev     # press Caps Lock, Esc, Alt, Win
 ```
 
-In `xev`:
-
-* Pressing **Caps Lock** should report keysym `Escape`.
-* Pressing **Escape** should report `Caps_Lock`.
-* Pressing **Alt** should report `Super_L` (modifiers include `Mod4`).
-* Pressing **Win** should report `Alt_L` (modifiers include `Mod1`).
-
-If you don't see this, your session is probably not the i3 session, or you're on
-Wayland (see below).
+In `xev`: **Caps Lock** → `Escape`; **Escape** → `Caps_Lock`; **Alt** → `Super_L`
+(Mod4); **Win** → `Alt_L` (Mod1).
 
 ---
 
-## 8. Customizing
+## 10. Customizing
 
-Everything lives under `~/.config/`:
+* **Terminal / launcher / browser:** edit `set $term`, `set $menu`, `set $browser`
+  in `~/.config/i3/config`.
+* **Bar:** `bar { … }` — it's `position bottom` and uses the default `dock` mode
+  (always visible). Change `position` to `top`, or set `mode hide` if you ever
+  want it to auto-hide.
+* **Status fields:** `~/.config/i3status/config`.
+* **Wallpaper / compositor:** intentionally not included (vanilla). Add your own
+  `exec` line if you want `feh`/`picom` later.
 
-* **Terminal / launcher / browser:** edit `set $term`, `set $menu` and
-  `set $browser` in `~/.config/i3/config` (defaults: `xterm`, `dmenu_run`,
-  `firefox`). See [§5.1](#51-why-xterm-and-not-alacrittykitty) for the terminal
-  rationale.
-* **Gaps/borders:** `gaps inner/outer`, `default_border pixel 2`.
-* **Wallpaper:** drop a PNG at `~/.config/i3/wallpaper.png`; i3 will apply it on
-  startup (`feh --bg-fill`).
-* **Status bar:** `~/.config/i3status/config` — wireless/ethernet, disk, load,
-  memory, CPU temperature, clock.
-* **Compositor:** `~/.config/picom/picom.conf` — shadows, fading, vsync.
-* **Screenshots:** `~/.config/i3/screenshot.sh`.
-
-After editing `~/.config/i3/config`, reload with **Alt + Shift + c**.
+Reload after editing with **Alt + Shift + c**.
 
 ---
 
-## 9. Choosing the i3 session at login
+## 11. Choosing the i3 session at login
 
-`i3-wm` ships `/usr/share/xsessions/i3.desktop`, so a display manager (GDM, which
-DGX OS uses) will offer it:
+`i3-wm` ships `/usr/share/xsessions/i3.desktop`, so GDM will offer it:
 
 1. Log out.
-2. On the GDM login screen, click the **gear/cog** icon (bottom-right on most
-   themes).
-3. Select **i3**.
-4. Log in.
+2. On the GDM login screen, click the **gear/cog** icon.
+3. Select **i3**, then log in.
 
-If instead you run headless/from a TTY with no display manager, use:
-
-```bash
-startx     # uses ~/.xinitrc, which applies the keymap and execs i3
-```
-
-To make i3 the **default** session, you can either leave GNOME installed and just
-pick i3 at login, or (more invasive) tell GDM to use i3 — not recommended unless
-you want to remove GNOME. The script does not change your default session.
+For a headless/TTY start: `startx` (uses `~/.xinitrc`). The script does **not**
+change your default session.
 
 ---
 
-## 10. Troubleshooting
+## 12. Troubleshooting
 
-**"I logged in but it's still GNOME."**
-You didn't select the i3 session — see [§9](#9-choosing-the-i3-session-at-login).
+**Still GNOME after login.** You didn't pick the i3 session — see §11.
 
-**Keys aren't swapped inside i3.**
-Check the session is X11, not Wayland: `echo $XDG_SESSION_TYPE` should print
-`x11`. i3 can't run under Wayland. Also re-run the setxkbmap line manually:
+**Keys aren't swapped inside i3.** Check `echo $XDG_SESSION_TYPE` is `x11`, then
+run `setxkbmap -option "caps:swapescape,altwin:swap_alt_win"` manually.
 
-```bash
-setxkbmap -option "caps:swapescape,altwin:swap_alt_win"
-```
+**Greeter keys aren't swapped.** Expected — use `--persistent-keys` (§8).
 
-**The greeter keys aren't swapped.**
-Expected — the greeter is a separate session; use `--persistent-keys` (§6).
+**Alt (= `$mod`) does nothing.** Confirm `~/.config/i3/config` starts with the
+`setxkbmap` exec line and `set $mod Mod4`; reload with **Alt + Shift + c**.
 
-**`$mod` (Alt) doesn't do anything.**
-Confirm i3 read the config: `i3-msg -t get_version` and check
-`~/.config/i3/config` starts with `set $mod Mod4` and the `setxkbmap` exec line.
-Reload with **Alt + Shift + c**.
+**Alt + b does nothing.** `command -v firefox` — if missing see §7.
 
-**A tray applet (network/bluetooth/audio) isn't showing.**
-Those need a running tray. The i3 `bar { tray_output primary }` provides one; the
-applets are launched from the i3 config. Verify they exist:
-`command -v nm-applet blueman-applet pasystray`. If one is missing, install its
-package (see §4).
+**Neovim key handling looks wrong.** Use `xterm`/`rxvt-unicode`, not
+Alacritty/kitty/WezTerm/foot (§6.1).
 
-**Tearing / no shadows.**
-Tune or disable `picom` in the i3 config, or edit
-`~/.config/picom/picom.conf`. With the NVIDIA driver, `backend = "glx"` is
-usually right; try `"xrender"` if you hit issues.
-
-**Wrong terminal / launcher / browser.**
-Edit `set $term` / `set $menu` / `set $browser` (§8). `xterm`, `rxvt-unicode`
-and `rofi` are installed as alternatives.
-
-**Alt + b does nothing.**
-Firefox isn't on `PATH`. Check `command -v firefox`; if missing, see
-[§5.2](#52-firefox-and-dgx-os-snap-caveat).
-
-**Neovim key handling looks wrong.**
-Make sure you're using `xterm`/`rxvt-unicode` (not Alacritty/kitty/WezTerm/foot),
-which don't emit the kitty keyboard protocol. See
-[§5.1](#51-why-xterm-and-not-alacrittykitty).
-
-**Suspend doesn't lock.**
-`xss-lock` is wired to `i3lock`. Test with `xss-lock --transfer-sleep-lock -- i3lock -n -c 1a1a1a &`.
+**Tray applet (network/audio) missing.** The stock config launches `nm-applet`
+and `dex --autostart` (which starts XDG autostart entries, e.g. blueman). Verify
+the packages are present (§5).
 
 ---
 
-## 11. Rolling back
+## 13. Rolling back
 
-The installer never removes packages and backs up any file it overwrites
-(`<file>.bak.<timestamp>`). To revert a config, restore the backup. To remove the
-added packages:
+The installer never removes packages and backs up every file it overwrites
+(`<file>.bak.<timestamp>`). Restore a backup to revert a config. To remove the
+packages:
 
 ```bash
-sudo apt-get remove --autoremove i3-wm i3status i3lock picom dunst \
+sudo apt-get remove --autoremove i3-wm i3status i3lock dex \
     xterm rxvt-unicode rofi suckless-tools xss-lock maim xclip brightnessctl \
-    blueman pasystray lxpolkit
+    blueman pasystray lxpolkit dunst
 # and, if you used --persistent-keys:
 sudo rm -f /etc/X11/xorg.conf.d/00-keyboard.conf
 ```

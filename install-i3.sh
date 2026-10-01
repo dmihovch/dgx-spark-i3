@@ -2,23 +2,22 @@
 # =============================================================================
 #  install-i3.sh
 #
-#  Sets up a complete i3 tiling-desktop environment on NVIDIA DGX Spark
-#  (DGX OS 7 — Ubuntu 24.04 "Noble" base, arm64) running X11.
+#  Sets up i3 on NVIDIA DGX Spark (DGX OS 7 — Ubuntu 24.04 "Noble", arm64) on
+#  X11.
 #
-#  What it does:
-#    1. Installs the i3 window manager and the "plumbing" that makes a bare
-#       WM usable as a daily driver: terminal, launcher, status bar, lock,
-#       compositor, notifications, network/bluetooth/audio tray applets,
-#       screenshot + clipboard tools, fonts, etc.
-#    2. Writes an opinionated i3 config to ~/.config/i3/config
-#    3. Writes i3status, picom, screenshot helper and ~/.xinitrc
-#    4. Applies YOUR keyboard preferences (see below)
+#  Philosophy: the ~/.config/i3/config written here is a NEAR-VERBATIM copy of
+#  the upstream i3 default config (i3 4.23). It is intentionally boring/vanilla
+#  and has exactly these modifications layered on top:
 #
-#  Keyboard preferences (the whole point):
-#    * Esc  <->  Caps Lock          XKB option: caps:swapescape
-#    * Alt  <->  Win                XKB option: altwin:swap_alt_win
-#        - Physical "Alt" now emits Super (Mod4) -> used as i3's $mod key
-#        - Physical "Win" now emits Alt   (Mod1)
+#    * Esc <-> Caps Lock          (XKB: caps:swapescape)
+#    * Alt <-> Win                (XKB: altwin:swap_alt_win)
+#         physical Alt -> Super (Mod4) ==> i3's $mod key
+#         physical Win -> Alt   (Mod1)
+#    * $mod = Mod4 (so all the stock Mod1+<key> bindings now use Alt)
+#    * Meta+Return = simple terminal (xterm)   [neovim friendly]
+#    * Meta+b      = firefox
+#    * status bar on the BOTTOM and never auto-hides
+#    * no compositor / no window fading
 #
 #  Usage:
 #    ./install-i3.sh                     # install packages + write configs
@@ -26,23 +25,16 @@
 #    ./install-i3.sh --emit-config DIR   # just (re)generate config files into DIR
 #    ./install-i3.sh --no-install        # skip apt, only write config files
 #
-#  Tested target: DGX OS 7 / Ubuntu 24.04, X11 (not Wayland).
 #  Safe to re-run; existing configs are backed up with a timestamp.
 # =============================================================================
 
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-#  Configuration knobs (edit before running if you like)
+#  Tweaks
 # ---------------------------------------------------------------------------
-# XKB options applied to the X session.
 XKB_OPTIONS="caps:swapescape,altwin:swap_alt_win"
-# XKB layout/variant used only for the OPTIONAL system-wide file.
-XKB_LAYOUT="${XKB_LAYOUT:-us}"
-
-# NOTE: the terminal ($term = xterm), launcher ($menu = dmenu_run) and browser
-# ($browser = firefox) that the keybindings use are set inside the embedded
-# ~/.config/i3/config below.
+XKB_LAYOUT="${XKB_LAYOUT:-us}"   # used only for the optional system-wide file
 
 # ---------------------------------------------------------------------------
 #  Argument parsing
@@ -54,11 +46,10 @@ EMIT_DIR=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --emit-config)  EMIT_ONLY=1; EMIT_DIR="${2:-$PWD}"; shift 2 ;;
-        --no-install)   DO_INSTALL=0; shift ;;
+        --emit-config)     EMIT_ONLY=1; EMIT_DIR="${2:-$PWD}"; shift 2 ;;
+        --no-install)      DO_INSTALL=0; shift ;;
         --persistent-keys) PERSISTENT_KEYS=1; shift ;;
-        -h|--help)
-            sed -n '2,40p' "$0"; exit 0 ;;
+        -h|--help)         sed -n '2,40p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -70,7 +61,6 @@ log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
-# Resolve the user we are installing FOR (works under sudo too).
 if [[ ${EUID} -eq 0 ]]; then
     TARGET_USER="${SUDO_USER:-root}"
 else
@@ -79,119 +69,165 @@ fi
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 [[ -n "$TARGET_HOME" ]] || die "Could not determine home directory for user '$TARGET_USER'."
 
-run_priv() {
-    if [[ ${EUID} -eq 0 ]]; then "$@"; else sudo "$@"; fi
-}
+run_priv() { if [[ ${EUID} -eq 0 ]]; then "$@"; else sudo "$@"; fi; }
 
 # ---------------------------------------------------------------------------
-#  Config file generators  (each takes a destination file path)
+#  Config file generators
 # ---------------------------------------------------------------------------
 write_i3_config() {
     local dest="$1"
+    # --- Upstream i3 4.23 default config, with the documented modifications. ---
     cat > "$dest" <<'I3CONFIG'
-# ===========================================================================
-#  i3 configuration
-#  Target: NVIDIA DGX Spark  ·  DGX OS 7 (Ubuntu 24.04, arm64)  ·  X11
-#  File:   ~/.config/i3/config
-# ===========================================================================
+# i3 config file (v4)
 #
-#  Keyboard customization (applies to the whole X session):
-#    * Caps Lock  <->  Escape            (XKB: caps:swapescape)
-#    * Physical Alt <-> Physical Win     (XKB: altwin:swap_alt_win)
-#         physical Alt  ->  Super  (Mod4)  ==> this is our $mod key
-#         physical Win  ->  Alt    (Mod1)
+# Please see https://i3wm.org/docs/userguide.html for a complete reference!
+#
+# This config file uses keycodes (bindsym) and was written for the QWERTY
+# layout.
 #
 # ---------------------------------------------------------------------------
+#  LOCAL MODIFICATIONS (NVIDIA DGX Spark)
+#    * Session-wide keyboard remap (see exec below):
+#         Caps Lock <-> Escape            (caps:swapescape)
+#         physical Alt <-> physical Win   (altwin:swap_alt_win)
+#             physical Alt -> Super (Mod4)  => this is the i3 modifier, $mod
+#             physical Win -> Alt   (Mod1)
+#    * $mod is Mod4, so every stock "Mod1+<key>" binding below is now "$mod+<key>".
+#    * $mod+Return starts a simple terminal (xterm); $mod+b starts firefox.
+#    * i3bar sits on the BOTTOM of the screen and never auto-hides.
+#    * No compositor, so no window fading.
+# ---------------------------------------------------------------------------
 
+# Apply the keyboard preferences to the whole X session.
 exec --no-startup-id setxkbmap -option "caps:swapescape,altwin:swap_alt_win"
 
-# Physical Alt (now Super/Mod4) is the i3 modifier.
+# i3 modifier = physical Alt (which now emits Super / Mod4).
 set $mod Mod4
-# Physical Win (now Alt/Mod1), available as a secondary modifier if wanted.
-set $alt Mod1
 
-# --- Fonts -----------------------------------------------------------------
-font pango:DejaVu Sans Mono 10
+# Font for window titles. Will also be used by the bar unless a different font
+# is used in the bar {} block below.
+font pango:monospace 8
 
-# --- Gaps / borders (native in i3 >= 4.22) ---------------------------------
-gaps inner 8
-gaps outer 4
-smart_gaps on
-smart_borders on
-default_border pixel 2
-default_floating_border pixel 2
-hide_edge_borders smart
+# This font is widely installed, provides lots of unicode glyphs, right-to-left
+# text rendering and scalability on retina/hidpi displays (thanks to pango).
+#font pango:DejaVu Sans Mono 8
 
-# --- Behaviour -------------------------------------------------------------
-focus_follows_mouse no
-mouse_warping output
-workspace_layout default
+# Start XDG autostart .desktop files using dex. See also
+# https://wiki.archlinux.org/index.php/XDG_Autostart
+exec --no-startup-id dex --autostart --environment i3
 
-# --- Startup applications --------------------------------------------------
-# Notifications
-exec --no-startup-id dunst
-# Network / Bluetooth / Audio tray applets
-exec --no-startup-id nm-applet --indicator
-exec --no-startup-id blueman-applet
-exec --no-startup-id pasystray
-# Compositor (shadows, no tearing)
-exec --no-startup-id picom --config "$HOME/.config/picom/picom.conf"
-# Lock the screen on suspend
-exec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock -n -c 1a1a1a
-# Wallpaper (only if a wallpaper.png exists)
-exec --no-startup-id bash -c '[ -f "$HOME/.config/i3/wallpaper.png" ] && feh --bg-fill "$HOME/.config/i3/wallpaper.png"'
+# The combination of xss-lock, nm-applet and pactl is a popular choice, so
+# they are included here as an example. Modify as you see fit.
 
-# --- Programs --------------------------------------------------------------
-# Simple terminal that does NOT implement the "kitty keyboard protocol", so it
-# plays nicely with Neovim/tmux (no CSI-u key weirdness). xterm is the most
-# conservative choice; rxvt-unicode is equally fine (both are installed).
+# xss-lock grabs a logind suspend inhibit lock and will use i3lock to lock the
+# screen before suspend. Use loginctl lock-session to lock your screen.
+exec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock --nofork
+
+# NetworkManager is the most popular way to manage wireless networks on Linux,
+# and nm-applet is a desktop environment-independent system tray GUI for it.
+exec --no-startup-id nm-applet
+
+# Use pactl to adjust volume in PulseAudio.
+set $refresh_i3status killall -SIGUSR1 i3status
+bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ +10% && $refresh_i3status
+bindsym XF86AudioLowerVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ -10% && $refresh_i3status
+bindsym XF86AudioMute exec --no-startup-id pactl set-sink-mute @DEFAULT_SINK@ toggle && $refresh_i3status
+bindsym XF86AudioMicMute exec --no-startup-id pactl set-source-mute @DEFAULT_SOURCE@ toggle && $refresh_i3status
+
+# use these keys for focus, movement, and resize directions when reaching for
+# the arrows is not convenient
+set $up l
+set $down k
+set $left j
+set $right semicolon
+
+# use Mouse+Mod1 to drag floating windows to their wanted position
+# (Mod1 is the physical Win key, which now acts as Alt)
+floating_modifier Mod1
+
+# move tiling windows via drag & drop by left-clicking into the title bar,
+# or left-clicking anywhere into the window while holding the floating modifier.
+tiling_drag modifier titlebar
+
+# start a terminal
+# (simple terminal that does not use the kitty keyboard protocol -> neovim/tmux safe)
 set $term xterm -fa "DejaVu Sans Mono" -fs 12
-set $menu dmenu_run -i -p "run:"
+bindsym $mod+Return exec $term
+
+# start the web browser
 set $browser firefox
+bindsym $mod+b exec --no-startup-id $browser
 
-# --- Launching -------------------------------------------------------------
-bindsym $mod+Return       exec --no-startup-id $term
-bindsym $mod+Shift+Return exec --no-startup-id $term -e tmux
-bindsym $mod+d            exec --no-startup-id $menu
-bindsym $mod+b            exec --no-startup-id $browser
-bindsym $mod+n            exec --no-startup-id xdg-open "$HOME"
-
-# --- Window management -----------------------------------------------------
+# kill focused window
 bindsym $mod+Shift+q kill
-bindsym $mod+f       fullscreen toggle
-bindsym $mod+Shift+space floating toggle
-bindsym $mod+space   focus mode_toggle
-bindsym $mod+a       focus parent
 
-# --- Layout / splitting ----------------------------------------------------
+# start dmenu (a program launcher)
+bindsym $mod+d exec --no-startup-id dmenu_run
+# A more modern dmenu replacement is rofi:
+# bindsym $mod+d exec "rofi -modi drun,run -show drun"
+# There also is i3-dmenu-desktop which only displays applications shipping a
+# .desktop file. It is a wrapper around dmenu, so you need that installed.
+# bindsym $mod+d exec --no-startup-id i3-dmenu-desktop
+
+# change focus
+bindsym $mod+$left focus left
+bindsym $mod+$down focus down
+bindsym $mod+$up focus up
+bindsym $mod+$right focus right
+
+# alternatively, you can use the cursor keys:
+bindsym $mod+Left focus left
+bindsym $mod+Down focus down
+bindsym $mod+Up focus up
+bindsym $mod+Right focus right
+
+# move focused window
+bindsym $mod+Shift+$left move left
+bindsym $mod+Shift+$down move down
+bindsym $mod+Shift+$up move up
+bindsym $mod+Shift+$right move right
+
+# alternatively, you can use the cursor keys:
+bindsym $mod+Shift+Left move left
+bindsym $mod+Shift+Down move down
+bindsym $mod+Shift+Up move up
+bindsym $mod+Shift+Right move right
+
+# split in horizontal orientation
 bindsym $mod+h split h
+
+# split in vertical orientation
 bindsym $mod+v split v
+
+# enter fullscreen mode for the focused container
+bindsym $mod+f fullscreen toggle
+
+# change container layout (stacked, tabbed, toggle split)
 bindsym $mod+s layout stacking
 bindsym $mod+w layout tabbed
 bindsym $mod+e layout toggle split
 
-# --- Focus -----------------------------------------------------------------
-bindsym $mod+Left  focus left
-bindsym $mod+Down  focus down
-bindsym $mod+Up    focus up
-bindsym $mod+Right focus right
-# home-row (vim-ish) aliases
-bindsym $mod+j focus left
-bindsym $mod+k focus down
-bindsym $mod+l focus up
-bindsym $mod+semicolon focus right
+# toggle tiling / floating
+bindsym $mod+Shift+space floating toggle
 
-# --- Move windows ----------------------------------------------------------
-bindsym $mod+Shift+Left  move left
-bindsym $mod+Shift+Down  move down
-bindsym $mod+Shift+Up    move up
-bindsym $mod+Shift+Right move right
-bindsym $mod+Shift+j move left
-bindsym $mod+Shift+k move down
-bindsym $mod+Shift+l move up
-bindsym $mod+Shift+semicolon move right
+# change focus between tiling / floating windows
+bindsym $mod+space focus mode_toggle
 
-# --- Workspaces ------------------------------------------------------------
+# focus the parent container
+bindsym $mod+a focus parent
+
+# focus the child container
+#bindsym $mod+d focus child
+
+# move the currently focused window to the scratchpad
+bindsym $mod+Shift+minus move scratchpad
+
+# Show the next scratchpad window or hide the focused scratchpad window.
+# If there are multiple scratchpad windows, this command cycles through them.
+bindsym $mod+minus scratchpad show
+
+# Define names for default workspaces for which we configure key bindings later on.
+# We use variables to avoid repeating the names in multiple places.
 set $ws1 "1"
 set $ws2 "2"
 set $ws3 "3"
@@ -203,6 +239,7 @@ set $ws8 "8"
 set $ws9 "9"
 set $ws10 "10"
 
+# switch to workspace
 bindsym $mod+1 workspace number $ws1
 bindsym $mod+2 workspace number $ws2
 bindsym $mod+3 workspace number $ws3
@@ -214,6 +251,7 @@ bindsym $mod+8 workspace number $ws8
 bindsym $mod+9 workspace number $ws9
 bindsym $mod+0 workspace number $ws10
 
+# move focused container to workspace
 bindsym $mod+Shift+1 move container to workspace number $ws1
 bindsym $mod+Shift+2 move container to workspace number $ws2
 bindsym $mod+Shift+3 move container to workspace number $ws3
@@ -225,65 +263,47 @@ bindsym $mod+Shift+8 move container to workspace number $ws8
 bindsym $mod+Shift+9 move container to workspace number $ws9
 bindsym $mod+Shift+0 move container to workspace number $ws10
 
-# --- Resize mode -----------------------------------------------------------
-mode "resize" {
-    bindsym Left  resize shrink width  5 px or 5 ppt
-    bindsym Down  resize grow   height 5 px or 5 ppt
-    bindsym Up    resize shrink height 5 px or 5 ppt
-    bindsym Right resize grow   width  5 px or 5 ppt
-    bindsym j resize shrink width  5 px or 5 ppt
-    bindsym k resize grow   height 5 px or 5 ppt
-    bindsym l resize shrink height 5 px or 5 ppt
-    bindsym semicolon resize grow width 5 px or 5 ppt
+# reload the configuration file
+bindsym $mod+Shift+c reload
+# restart i3 inplace (preserves your layout/session, can be used to upgrade i3)
+bindsym $mod+Shift+r restart
+# exit i3 (logs you out of your X session)
+bindsym $mod+Shift+e exec "i3-nagbar -t warning -m 'You pressed the exit shortcut. Do you really want to exit i3? This will end your X session.' -B 'Yes, exit i3' 'i3-msg exit'"
 
-    bindsym Return mode "default"
-    bindsym Escape mode "default"
+# resize window (you can also use the mouse for that)
+mode "resize" {
+        # These bindings trigger as soon as you enter the resize mode
+
+        # Pressing left will shrink the window’s width.
+        # Pressing right will grow the window’s width.
+        # Pressing up will shrink the window’s height.
+        # Pressing down will grow the window’s height.
+        bindsym $left       resize shrink width 10 px or 10 ppt
+        bindsym $down       resize grow height 10 px or 10 ppt
+        bindsym $up         resize shrink height 10 px or 10 ppt
+        bindsym $right      resize grow width 10 px or 10 ppt
+
+        # same bindings, but for the arrow keys
+        bindsym Left        resize shrink width 10 px or 10 ppt
+        bindsym Down        resize grow height 10 px or 10 ppt
+        bindsym Up          resize shrink height 10 px or 10 ppt
+        bindsym Right       resize grow width 10 px or 10 ppt
+
+        # back to normal: Enter or Escape or $mod+r
+        bindsym Return mode "default"
+        bindsym Escape mode "default"
+        bindsym $mod+r mode "default"
 }
+
 bindsym $mod+r mode "resize"
 
-# --- i3 control ------------------------------------------------------------
-bindsym $mod+Shift+c reload
-bindsym $mod+Shift+r restart
-bindsym $mod+Shift+e exec --no-startup-id i3-nagbar -t warning -m 'Exit i3?' -B 'Yes, exit i3' 'i3-msg exit'
-bindsym $mod+Shift+x exec --no-startup-id i3lock -n -c 1a1a1a
-
-# --- Screenshots (see ~/.config/i3/screenshot.sh) --------------------------
-bindsym Print       exec --no-startup-id ~/.config/i3/screenshot.sh
-bindsym $mod+Print  exec --no-startup-id ~/.config/i3/screenshot.sh select
-
-# --- Media / hardware keys -------------------------------------------------
-bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ +5%
-bindsym XF86AudioLowerVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ -5%
-bindsym XF86AudioMute        exec --no-startup-id pactl set-sink-mute   @DEFAULT_SINK@ toggle
-bindsym XF86AudioMicMute     exec --no-startup-id pactl set-source-mute @DEFAULT_SOURCE@ toggle
-bindsym XF86AudioPlay        exec --no-startup-id playerctl play-pause
-bindsym XF86AudioNext        exec --no-startup-id playerctl next
-bindsym XF86AudioPrev        exec --no-startup-id playerctl previous
-bindsym XF86MonBrightnessUp  exec --no-startup-id brightnessctl set +5%
-bindsym XF86MonBrightnessDown exec --no-startup-id brightnessctl set 5%-
-
-# --- Status bar ------------------------------------------------------------
+# Start i3bar to display a workspace bar (plus the system information i3status
+# finds out, if available).
+# Kept vanilla except: it is anchored to the bottom and stays visible
+# (default mode is "dock", i.e. it does not auto-hide).
 bar {
-    status_command i3status --config "$HOME/.config/i3status/config"
-    position top
-    mode hide
-    modifier $mod
-    workspace_buttons yes
-    strip_workspace_numbers no
-    tray_output primary
-    fonts {
-        font pango:DejaVu Sans Mono, FontAwesome 10
-    }
-    colors {
-        background #1d1f21
-        statusline #c5c8c6
-        separator  #373b41
-        focused_workspace  #1d1f21 #285577 #ffffff
-        active_workspace   #1d1f21 #333333 #ffffff
-        inactive_workspace #1d1f21 #1d1f21 #888888
-        urgent_workspace   #1d1f21 #900000 #ffffff
-        binding_mode       #1d1f21 #900000 #ffffff
-    }
+        status_command i3status
+        position bottom
 }
 I3CONFIG
 }
@@ -342,77 +362,17 @@ tztime local {
 I3STATUS
 }
 
-write_picom_config() {
-    local dest="$1"
-    cat > "$dest" <<'PICOM'
-# Minimal picom compositor config  ·  ~/.config/picom/picom.conf
-backend = "glx";
-vsync = true;
-
-shadow = true;
-shadow-radius = 12;
-shadow-opacity = 0.40;
-shadow-offset-x = -12;
-shadow-offset-y = -12;
-
-fading = true;
-fade-in-step = 0.03;
-fade-out-step = 0.06;
-
-inactive-opacity = 0.95;
-frame-opacity = 1.0;
-
-# Ignore shadows on these (adjust as you like)
-shadow-exclude = [
-    "class_g = 'i3-frame'",
-    "class_g = 'slop'",
-    "_NET_WM_STATE@:32a *= '_NET_WM_STATE_HIDDEN'"
-];
-PICOM
-}
-
-write_screenshot_script() {
-    local dest="$1"
-    cat > "$dest" <<'SCREENSHOT'
-#!/usr/bin/env bash
-# Screenshot helper  ·  ~/.config/i3/screenshot.sh
-# Usage: screenshot.sh          -> full screen
-#        screenshot.sh select   -> interactive region
-set -euo pipefail
-
-dir="$HOME/Pictures/Screenshots"
-mkdir -p "$dir"
-file="$dir/$(date +%F-%H%M%S).png"
-
-if [[ "${1:-}" == "select" ]]; then
-    maim -s "$file"
-else
-    maim "$file"
-fi
-
-if command -v notify-send >/dev/null 2>&1; then
-    notify-send -i camera "Screenshot saved" "$file"
-fi
-SCREENSHOT
-    chmod +x "$dest"
-}
-
 write_xinitrc() {
     local dest="$1"
     cat > "$dest" <<'XINITRC'
 #!/bin/sh
 # ~/.xinitrc  — used when starting a session with `startx`.
-# Applies your keyboard preferences, then launches i3.
 
+# Apply the keyboard preferences (Caps<->Esc, Alt<->Win).
 setxkbmap -option "caps:swapescape,altwin:swap_alt_win"
 
-# Load X resources / merge any existing ones
+# Merge X resources if present.
 [ -f "$HOME/.Xresources" ] && xrdb -merge "$HOME/.Xresources"
-
-# --- Session quality-of-life (tray bits are also launched from the i3 config)
-if command -v xset >/dev/null 2>&1; then
-    xset -dpms s off   # keep the DPMS/blanking policy out of the way
-fi
 
 exec i3
 XINITRC
@@ -420,15 +380,13 @@ XINITRC
 }
 
 # ---------------------------------------------------------------------------
-#  EMIT-ONLY mode: just write the canonical config files into a directory
+#  EMIT-ONLY mode
 # ---------------------------------------------------------------------------
 if [[ ${EMIT_ONLY} -eq 1 ]]; then
     mkdir -p "$EMIT_DIR"
-    write_i3_config        "$EMIT_DIR/config"
-    write_i3status_config  "$EMIT_DIR/i3status.conf"
-    write_picom_config     "$EMIT_DIR/picom.conf"
-    write_screenshot_script "$EMIT_DIR/screenshot.sh"
-    write_xinitrc          "$EMIT_DIR/xinitrc"
+    write_i3_config       "$EMIT_DIR/config"
+    write_i3status_config "$EMIT_DIR/i3status.conf"
+    write_xinitrc         "$EMIT_DIR/xinitrc"
     log "Config files written to: $EMIT_DIR"
     ls -l "$EMIT_DIR"
     exit 0
@@ -446,31 +404,29 @@ if [[ -r /etc/os-release ]]; then
     . /etc/os-release
     log "Detected OS: ${PRETTY_NAME:-unknown}"
 fi
-
 if [[ "${XDG_SESSION_TYPE:-}" == "wayland" ]]; then
-    warn "Current session is Wayland. i3 is X11-only — log out and pick an 'i3' (X11) session."
+    warn "Current session is Wayland. i3 is X11-only — log out and pick the 'i3' (X11) session."
 fi
 
 # ---------------------------------------------------------------------------
-#  Package installation
+#  Packages
 # ---------------------------------------------------------------------------
 PKGS=(
-    # --- window manager core ---
-    i3-wm i3status i3lock
-    # --- session / X utilities ---
+    # window manager core
+    i3-wm i3status i3lock dex
+    # session / X utilities
     xinit x11-xserver-utils x11-xkb-utils xdg-utils dbus-x11
-    # --- launcher / terminal ---
-    # (xterm + rxvt-unicode: simple terminals without kitty keyboard protocol)
+    # launcher / terminals (xterm + rxvt-unicode: no kitty keyboard protocol)
     suckless-tools rofi xterm rxvt-unicode
-    # --- status-bar plumbing ---
+    # status-bar / tray plumbing
     network-manager-gnome blueman pasystray
     pulseaudio-utils pavucontrol playerctl
-    # --- desktop niceties ---
-    dunst libnotify-bin feh picom
+    # notifications / misc
+    dunst libnotify-bin
     brightnessctl xss-lock lxpolkit gnome-keyring
-    # --- screenshots / clipboard ---
+    # screenshots / clipboard
     maim xclip
-    # --- fonts / theming ---
+    # fonts / theming
     fonts-dejavu fonts-font-awesome lxappearance
 )
 
@@ -495,7 +451,7 @@ if [[ ${DO_INSTALL} -eq 1 ]]; then
             log "Firefox installed."
         else
             warn "Could not install Firefox automatically (DGX OS may not have snapd)."
-            warn "Install it your way (snap, Mozilla repo, flatpak) — the Meta+b"
+            warn "Install it your way (snap, Mozilla repo, flatpak) — the \$mod+b"
             warn "binding just runs 'firefox', or edit 'set \$browser' in the i3 config."
         fi
     fi
@@ -504,7 +460,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-#  Write user config files (with backups)
+#  Write configs (with backups)
 # ---------------------------------------------------------------------------
 backup_if_exists() {
     local f="$1"
@@ -517,31 +473,25 @@ backup_if_exists() {
 }
 
 log "Writing configuration files…"
-mkdir -p "$TARGET_HOME/.config/i3" \
-         "$TARGET_HOME/.config/i3status" \
-         "$TARGET_HOME/.config/picom"
+mkdir -p "$TARGET_HOME/.config/i3" "$TARGET_HOME/.config/i3status"
 
 backup_if_exists "$TARGET_HOME/.config/i3/config"
 backup_if_exists "$TARGET_HOME/.config/i3status/config"
-backup_if_exists "$TARGET_HOME/.config/picom/picom.conf"
 backup_if_exists "$TARGET_HOME/.xinitrc"
 
-write_i3_config         "$TARGET_HOME/.config/i3/config"
-write_i3status_config   "$TARGET_HOME/.config/i3status/config"
-write_picom_config      "$TARGET_HOME/.config/picom/picom.conf"
-write_screenshot_script "$TARGET_HOME/.config/i3/screenshot.sh"
-write_xinitrc           "$TARGET_HOME/.xinitrc"
+write_i3_config       "$TARGET_HOME/.config/i3/config"
+write_i3status_config "$TARGET_HOME/.config/i3status/config"
+write_xinitrc         "$TARGET_HOME/.xinitrc"
 
-# Fix ownership if we were invoked with sudo
 if [[ ${EUID} -eq 0 && "$TARGET_USER" != "root" ]]; then
     chown -R "$TARGET_USER":"$TARGET_USER" "$TARGET_HOME/.config" "$TARGET_HOME/.xinitrc" 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------
-#  Optional: persist the keymap system-wide (so the login greeter matches too)
+#  Optional: persist the keymap system-wide (greeter too)
 # ---------------------------------------------------------------------------
 if [[ ${PERSISTENT_KEYS} -eq 1 ]]; then
-    log "Writing system-wide keyboard config (/etc/X11/xorg.conf.d/00-keyboard.conf)…"
+    log "Writing /etc/X11/xorg.conf.d/00-keyboard.conf…"
     run_priv mkdir -p /etc/X11/xorg.conf.d
     TMP_KB="$(mktemp)"
     cat > "$TMP_KB" <<EOF
@@ -556,7 +506,7 @@ EndSection
 EOF
     run_priv cp "$TMP_KB" /etc/X11/xorg.conf.d/00-keyboard.conf
     rm -f "$TMP_KB"
-    warn "Persistent keymap written. A full log out / reboot is needed to take effect everywhere."
+    warn "Persistent keymap written. A full log out / reboot is needed for it to apply everywhere."
 fi
 
 # ---------------------------------------------------------------------------
@@ -569,25 +519,25 @@ cat <<EOF
 =============================================================================
 
   Files written:
-    ~/.config/i3/config              (main i3 config)
-    ~/.config/i3status/config        (status bar)
-    ~/.config/i3/screenshot.sh       (Print / \$mod+Print)
-    ~/.config/picom/picom.conf       (compositor)
-    ~/.xinitrc                       (for 'startx' from a TTY)
+    ~/.config/i3/config          (vanilla i3 config + your modifications)
+    ~/.config/i3status/config    (status bar)
+    ~/.xinitrc                   (for 'startx' from a TTY)
 
   Keyboard, as requested:
     Caps Lock  <->  Escape
     Physical Alt  -> Super (Mod4)  == your i3 \$mod key
     Physical Win  -> Alt   (Mod1)
 
+  i3:  \$mod+Return = xterm (neovim-friendly),  \$mod+b = firefox
+       bar is on the bottom, no compositor / no window fading.
+
   Next steps:
     1. Log out, then pick the "i3" session at the login screen
        (gear/cog icon on GDM -> "i3").
-       - or, from a TTY with no display manager running:  startx
+       - or, from a TTY with no display manager:  startx
     2. Verify the remap inside the session:
            setxkbmap -print | grep -o 'caps:swapescape,altwin:swap_alt_win'
            xev   # press Caps/Esc/Alt/Win and inspect keysyms
-    3. Start working:  \$mod+Return = terminal,  \$mod+d = launcher.
 
   Hint: run with --persistent-keys to also remap keys at the greeter.
 =============================================================================
