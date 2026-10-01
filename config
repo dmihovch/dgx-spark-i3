@@ -1,0 +1,196 @@
+# ===========================================================================
+#  i3 configuration
+#  Target: NVIDIA DGX Spark  ·  DGX OS 7 (Ubuntu 24.04, arm64)  ·  X11
+#  File:   ~/.config/i3/config
+# ===========================================================================
+#
+#  Keyboard customization (applies to the whole X session):
+#    * Caps Lock  <->  Escape            (XKB: caps:swapescape)
+#    * Physical Alt <-> Physical Win     (XKB: altwin:swap_alt_win)
+#         physical Alt  ->  Super  (Mod4)  ==> this is our $mod key
+#         physical Win  ->  Alt    (Mod1)
+#
+# ---------------------------------------------------------------------------
+
+exec --no-startup-id setxkbmap -option "caps:swapescape,altwin:swap_alt_win"
+
+# Physical Alt (now Super/Mod4) is the i3 modifier.
+set $mod Mod4
+# Physical Win (now Alt/Mod1), available as a secondary modifier if wanted.
+set $alt Mod1
+
+# --- Fonts -----------------------------------------------------------------
+font pango:DejaVu Sans Mono 10
+
+# --- Gaps / borders (native in i3 >= 4.22) ---------------------------------
+gaps inner 8
+gaps outer 4
+smart_gaps on
+smart_borders on
+default_border pixel 2
+default_floating_border pixel 2
+hide_edge_borders smart
+
+# --- Behaviour -------------------------------------------------------------
+focus_follows_mouse no
+mouse_warping output
+workspace_layout default
+
+# --- Startup applications --------------------------------------------------
+# Notifications
+exec --no-startup-id dunst
+# Network / Bluetooth / Audio tray applets
+exec --no-startup-id nm-applet --indicator
+exec --no-startup-id blueman-applet
+exec --no-startup-id pasystray
+# Compositor (shadows, no tearing)
+exec --no-startup-id picom --config "$HOME/.config/picom/picom.conf"
+# Lock the screen on suspend
+exec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock -n -c 1a1a1a
+# Wallpaper (only if a wallpaper.png exists)
+exec --no-startup-id bash -c '[ -f "$HOME/.config/i3/wallpaper.png" ] && feh --bg-fill "$HOME/.config/i3/wallpaper.png"'
+
+# --- Programs --------------------------------------------------------------
+# Simple terminal that does NOT implement the "kitty keyboard protocol", so it
+# plays nicely with Neovim/tmux (no CSI-u key weirdness). xterm is the most
+# conservative choice; rxvt-unicode is equally fine (both are installed).
+set $term xterm -fa "DejaVu Sans Mono" -fs 12
+set $menu dmenu_run -i -p "run:"
+set $browser firefox
+
+# --- Launching -------------------------------------------------------------
+bindsym $mod+Return       exec --no-startup-id $term
+bindsym $mod+Shift+Return exec --no-startup-id $term -e tmux
+bindsym $mod+d            exec --no-startup-id $menu
+bindsym $mod+b            exec --no-startup-id $browser
+bindsym $mod+n            exec --no-startup-id xdg-open "$HOME"
+
+# --- Window management -----------------------------------------------------
+bindsym $mod+Shift+q kill
+bindsym $mod+f       fullscreen toggle
+bindsym $mod+Shift+space floating toggle
+bindsym $mod+space   focus mode_toggle
+bindsym $mod+a       focus parent
+
+# --- Layout / splitting ----------------------------------------------------
+bindsym $mod+h split h
+bindsym $mod+v split v
+bindsym $mod+s layout stacking
+bindsym $mod+w layout tabbed
+bindsym $mod+e layout toggle split
+
+# --- Focus -----------------------------------------------------------------
+bindsym $mod+Left  focus left
+bindsym $mod+Down  focus down
+bindsym $mod+Up    focus up
+bindsym $mod+Right focus right
+# home-row (vim-ish) aliases
+bindsym $mod+j focus left
+bindsym $mod+k focus down
+bindsym $mod+l focus up
+bindsym $mod+semicolon focus right
+
+# --- Move windows ----------------------------------------------------------
+bindsym $mod+Shift+Left  move left
+bindsym $mod+Shift+Down  move down
+bindsym $mod+Shift+Up    move up
+bindsym $mod+Shift+Right move right
+bindsym $mod+Shift+j move left
+bindsym $mod+Shift+k move down
+bindsym $mod+Shift+l move up
+bindsym $mod+Shift+semicolon move right
+
+# --- Workspaces ------------------------------------------------------------
+set $ws1 "1"
+set $ws2 "2"
+set $ws3 "3"
+set $ws4 "4"
+set $ws5 "5"
+set $ws6 "6"
+set $ws7 "7"
+set $ws8 "8"
+set $ws9 "9"
+set $ws10 "10"
+
+bindsym $mod+1 workspace number $ws1
+bindsym $mod+2 workspace number $ws2
+bindsym $mod+3 workspace number $ws3
+bindsym $mod+4 workspace number $ws4
+bindsym $mod+5 workspace number $ws5
+bindsym $mod+6 workspace number $ws6
+bindsym $mod+7 workspace number $ws7
+bindsym $mod+8 workspace number $ws8
+bindsym $mod+9 workspace number $ws9
+bindsym $mod+0 workspace number $ws10
+
+bindsym $mod+Shift+1 move container to workspace number $ws1
+bindsym $mod+Shift+2 move container to workspace number $ws2
+bindsym $mod+Shift+3 move container to workspace number $ws3
+bindsym $mod+Shift+4 move container to workspace number $ws4
+bindsym $mod+Shift+5 move container to workspace number $ws5
+bindsym $mod+Shift+6 move container to workspace number $ws6
+bindsym $mod+Shift+7 move container to workspace number $ws7
+bindsym $mod+Shift+8 move container to workspace number $ws8
+bindsym $mod+Shift+9 move container to workspace number $ws9
+bindsym $mod+Shift+0 move container to workspace number $ws10
+
+# --- Resize mode -----------------------------------------------------------
+mode "resize" {
+    bindsym Left  resize shrink width  5 px or 5 ppt
+    bindsym Down  resize grow   height 5 px or 5 ppt
+    bindsym Up    resize shrink height 5 px or 5 ppt
+    bindsym Right resize grow   width  5 px or 5 ppt
+    bindsym j resize shrink width  5 px or 5 ppt
+    bindsym k resize grow   height 5 px or 5 ppt
+    bindsym l resize shrink height 5 px or 5 ppt
+    bindsym semicolon resize grow width 5 px or 5 ppt
+
+    bindsym Return mode "default"
+    bindsym Escape mode "default"
+}
+bindsym $mod+r mode "resize"
+
+# --- i3 control ------------------------------------------------------------
+bindsym $mod+Shift+c reload
+bindsym $mod+Shift+r restart
+bindsym $mod+Shift+e exec --no-startup-id i3-nagbar -t warning -m 'Exit i3?' -B 'Yes, exit i3' 'i3-msg exit'
+bindsym $mod+Shift+x exec --no-startup-id i3lock -n -c 1a1a1a
+
+# --- Screenshots (see ~/.config/i3/screenshot.sh) --------------------------
+bindsym Print       exec --no-startup-id ~/.config/i3/screenshot.sh
+bindsym $mod+Print  exec --no-startup-id ~/.config/i3/screenshot.sh select
+
+# --- Media / hardware keys -------------------------------------------------
+bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ +5%
+bindsym XF86AudioLowerVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ -5%
+bindsym XF86AudioMute        exec --no-startup-id pactl set-sink-mute   @DEFAULT_SINK@ toggle
+bindsym XF86AudioMicMute     exec --no-startup-id pactl set-source-mute @DEFAULT_SOURCE@ toggle
+bindsym XF86AudioPlay        exec --no-startup-id playerctl play-pause
+bindsym XF86AudioNext        exec --no-startup-id playerctl next
+bindsym XF86AudioPrev        exec --no-startup-id playerctl previous
+bindsym XF86MonBrightnessUp  exec --no-startup-id brightnessctl set +5%
+bindsym XF86MonBrightnessDown exec --no-startup-id brightnessctl set 5%-
+
+# --- Status bar ------------------------------------------------------------
+bar {
+    status_command i3status --config "$HOME/.config/i3status/config"
+    position top
+    mode hide
+    modifier $mod
+    workspace_buttons yes
+    strip_workspace_numbers no
+    tray_output primary
+    fonts {
+        font pango:DejaVu Sans Mono, FontAwesome 10
+    }
+    colors {
+        background #1d1f21
+        statusline #c5c8c6
+        separator  #373b41
+        focused_workspace  #1d1f21 #285577 #ffffff
+        active_workspace   #1d1f21 #333333 #ffffff
+        inactive_workspace #1d1f21 #1d1f21 #888888
+        urgent_workspace   #1d1f21 #900000 #ffffff
+        binding_mode       #1d1f21 #900000 #ffffff
+    }
+}
