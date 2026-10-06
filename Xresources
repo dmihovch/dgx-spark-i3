@@ -1,0 +1,27 @@
+! ~/.Xresources  —  managed by install-i3.sh
+!
+! Loaded by the i3 config (exec xrdb -merge ~/.Xresources) and by ~/.xinitrc.
+! Re-apply after editing with:  xrdb -merge ~/.Xresources
+
+! ---------------------------------------------------------------------------
+!  xterm: font
+! ---------------------------------------------------------------------------
+! "Iosevka Term" is the terminal-optimised cut of Iosevka (installed by
+! install-i3.sh into ~/.local/share/fonts). Use "Iosevka" for the narrower
+! default cut, or "Iosevka Fixed" for a strictly monospaced cut.
+XTerm*faceName: Iosevka Term
+XTerm*faceSize: 18
+
+! ---------------------------------------------------------------------------
+!  xterm: clipboard (copy / paste)
+! ---------------------------------------------------------------------------
+! Put mouse selections on the CLIPBOARD as well as PRIMARY, so a selection can
+! be pasted with Ctrl+V in other applications.
+XTerm*selectToClipboard: true
+
+! Ctrl+Shift+C = copy, Ctrl+Shift+V = paste.
+! (The xterm defaults still work too: middle-click pastes PRIMARY, and
+!  Shift+Insert pastes PRIMARY/CLIPBOARD.)
+XTerm*VT100.Translations: #override \n\
+    Ctrl Shift <Key>C: copy-selection(CLIPBOARD) \n\
+    Ctrl Shift <Key>V: insert-selection(CLIPBOARD)
