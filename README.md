@@ -32,11 +32,15 @@ Net effect:
   i.e. Alt-based).
 * **Win acts as Alt** (Mod1).
 
-Applied two ways for robustness:
+Applied three ways for robustness:
 
 1. `exec setxkbmap -option "caps:swapescape,altwin:swap_alt_win"` near the top of
-   `~/.config/i3/config` (always active in the i3 session), and
-2. `~/.xinitrc` does the same for `startx` sessions.
+   `~/.config/i3/config` (always active in the i3 session),
+2. `~/.xinitrc` does the same for `startx` sessions, and
+3. `/etc/X11/xorg.conf.d/00-keyboard.conf` (written by the installer by default)
+   applies the same options to every keyboard the X server sees — including a
+   USB keyboard re-detected after suspend/resume, which is what otherwise
+   resets the swap.
 
 ---
 
@@ -53,7 +57,7 @@ else was touched:
   deliberately left as `Mod1` so **physical Win** still drags floating windows.
 * **Terminal:** `$mod+Return` now runs a simple terminal:
   ```i3config
-  set $term xterm -fa "DejaVu Sans Mono" -fs 12
+  set $term xterm -fa "DejaVu Sans Mono" -fs 18
   bindsym $mod+Return exec $term
   ```
 * **Browser:** `$mod+b` runs Firefox:
@@ -94,7 +98,7 @@ Then **log out and pick the `i3` session** at the login screen.
 
 | Flag | Effect |
 |---|---|
-| `--persistent-keys` | Also write `/etc/X11/xorg.conf.d/00-keyboard.conf` so the remap applies at the greeter. |
+| `--persistent-keys` | Write `/etc/X11/xorg.conf.d/00-keyboard.conf` (now the default) so the remap applies at the greeter and survives suspend/resume. |
 | `--no-install` | Skip `apt`; only (re)write the config files. |
 | `--emit-config DIR` | Dump the canonical config files into `DIR` (handy for inspection). |
 
@@ -189,16 +193,13 @@ Mozilla `apt` repo, or a Flatpak), or point the binding elsewhere by editing
 
 ---
 
-## 8. Optional: remap at the login greeter too
+## 8. Remap at the greeter and across suspend/resume
 
 The i3-session remap doesn't cover the **greeter** (login screen), which is a
-separate X session. To swap keys there as well:
-
-```bash
-./install-i3.sh --no-install --persistent-keys
-```
-
-That writes `/etc/X11/xorg.conf.d/00-keyboard.conf`:
+separate X session — and a plain `setxkbmap` is lost when a USB keyboard is
+re-detected after suspend/resume. The installer therefore writes
+`/etc/X11/xorg.conf.d/00-keyboard.conf` **by default**; the X server applies
+it to every keyboard device, including on wake:
 
 ```ini
 Section "InputClass"
@@ -263,7 +264,7 @@ change your default session.
 **Keys aren't swapped inside i3.** Check `echo $XDG_SESSION_TYPE` is `x11`, then
 run `setxkbmap -option "caps:swapescape,altwin:swap_alt_win"` manually.
 
-**Greeter keys aren't swapped.** Expected — use `--persistent-keys` (§8).
+**Greeter keys aren't swapped, or the remap resets after sleep.** The system-wide keymap file is missing — re-run `./install-i3.sh --no-install` (§8).
 
 **Alt (= `$mod`) does nothing.** Confirm `~/.config/i3/config` starts with the
 `setxkbmap` exec line and `set $mod Mod4`; reload with **Alt + Shift + c**.
@@ -289,6 +290,6 @@ packages:
 sudo apt-get remove --autoremove i3-wm i3status i3lock dex \
     xterm rxvt-unicode rofi suckless-tools xss-lock maim xclip brightnessctl \
     blueman pasystray lxpolkit dunst
-# and, if you used --persistent-keys:
+# and, to remove the system-wide keymap file:
 sudo rm -f /etc/X11/xorg.conf.d/00-keyboard.conf
 ```

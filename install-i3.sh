@@ -21,7 +21,7 @@
 #
 #  Usage:
 #    ./install-i3.sh                     # install packages + write configs
-#    ./install-i3.sh --persistent-keys   # also persist keymap for the greeter
+#    ./install-i3.sh --persistent-keys   # (default) system-wide keymap file
 #    ./install-i3.sh --emit-config DIR   # just (re)generate config files into DIR
 #    ./install-i3.sh --no-install        # skip apt, only write config files
 #
@@ -41,7 +41,7 @@ XKB_LAYOUT="${XKB_LAYOUT:-us}"   # used only for the optional system-wide file
 # ---------------------------------------------------------------------------
 EMIT_ONLY=0
 DO_INSTALL=1
-PERSISTENT_KEYS=0
+PERSISTENT_KEYS=1
 EMIT_DIR=""
 
 while [[ $# -gt 0 ]]; do
@@ -151,7 +151,7 @@ tiling_drag modifier titlebar
 
 # start a terminal
 # (simple terminal that does not use the kitty keyboard protocol -> neovim/tmux safe)
-set $term xterm -fa "DejaVu Sans Mono" -fs 12
+set $term xterm -fa "DejaVu Sans Mono" -fs 18
 bindsym $mod+Return exec $term
 
 # start the web browser
@@ -488,7 +488,7 @@ if [[ ${EUID} -eq 0 && "$TARGET_USER" != "root" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-#  Optional: persist the keymap system-wide (greeter too)
+#  Persist the keymap system-wide (greeter, and survives suspend/resume)
 # ---------------------------------------------------------------------------
 if [[ ${PERSISTENT_KEYS} -eq 1 ]]; then
     log "Writing /etc/X11/xorg.conf.d/00-keyboard.conf…"
@@ -539,6 +539,6 @@ cat <<EOF
            setxkbmap -print | grep -o 'caps:swapescape,altwin:swap_alt_win'
            xev   # press Caps/Esc/Alt/Win and inspect keysyms
 
-  Hint: run with --persistent-keys to also remap keys at the greeter.
+  System-wide keymap written: it survives suspend/resume and covers the greeter.
 =============================================================================
 EOF

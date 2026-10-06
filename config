@@ -71,7 +71,7 @@ tiling_drag modifier titlebar
 
 # start a terminal
 # (simple terminal that does not use the kitty keyboard protocol -> neovim/tmux safe)
-set $term xterm -fa "DejaVu Sans Mono" -fs 12
+set $term xterm -fa "DejaVu Sans Mono" -fs 18
 bindsym $mod+Return exec $term
 
 # start the web browser
