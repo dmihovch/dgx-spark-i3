@@ -55,10 +55,27 @@ else was touched:
 * **Changed** every `Mod1+…` keybinding to `$mod+…` (focus, move, layout,
   workspaces, reload/restart/exit, resize mode). `floating_modifier Mod1` is
   deliberately left as `Mod1` so **physical Win** still drags floating windows.
-* **Terminal:** `$mod+Return` now runs a simple terminal:
+* **Terminal:** `$mod+Return` runs xterm; its font (Iosevka Term) and clipboard
+  bindings come from `~/.Xresources` (loaded with `xrdb`):
   ```i3config
-  set $term xterm -fa "DejaVu Sans Mono" -fs 18
+  set $term xterm
   bindsym $mod+Return exec $term
+  ```
+* **Navigation:** vim-style — `h`=left, `j`=down, `k`=up, `l`=right:
+  ```i3config
+  set $up k
+  set $down j
+  set $left h
+  set $right l
+  ```
+  The old `split h` binding moved to `$mod+semicolon`:
+  ```i3config
+  bindsym $mod+semicolon split h
+  ```
+* **X resources:** the config loads `~/.Xresources` at startup (xterm font +
+  clipboard):
+  ```i3config
+  exec --no-startup-id xrdb -merge ~/.Xresources
   ```
 * **Browser:** `$mod+b` runs Firefox:
   ```i3config
@@ -112,10 +129,12 @@ README.md            This document
 config               i3 config            -> ~/.config/i3/config
 i3status.conf        status-bar config    -> ~/.config/i3status/config
 xinitrc              startx session       -> ~/.xinitrc
+Xresources           xterm font/clipboard -> ~/.Xresources
 ```
 
-`config`, `i3status.conf` and `xinitrc` are the exact files the installer writes
-(regenerate with `./install-i3.sh --emit-config .`), so copies never drift.
+`config`, `i3status.conf`, `xinitrc` and `Xresources` are the exact files the
+installer writes (regenerate with `./install-i3.sh --emit-config .`), so copies
+never drift.
 
 ---
 
@@ -131,6 +150,9 @@ xinitrc              startx session       -> ~/.xinitrc
 * **Niceties:** `dunst`, `libnotify-bin`, `brightnessctl`, `xss-lock`, `lxpolkit`,
   `gnome-keyring`, `maim`, `xclip`
 * **Fonts / theming:** `fonts-dejavu`, `fonts-font-awesome`, `lxappearance`
+* **Iosevka font:** downloaded from the upstream GitHub release into
+  `~/.local/share/fonts/iosevka` (skip with `--no-font`; override the version
+  with `IOSEVKA_VERSION=…` or the cut with `IOSEVKA_ASSET=PkgTTC-SGr-Iosevka`).
 * **Browser:** `firefox` (best effort — see [§7](#7-firefox-and-dgx-os-snap-caveat))
 
 > All available for `arm64` from the stock Ubuntu 24.04 archives; no third-party
@@ -145,13 +167,13 @@ xinitrc              startx session       -> ~/.xinitrc
 | **Alt + Return** | Terminal (`xterm`) |
 | **Alt + b** | Browser (`firefox`) |
 | **Alt + d** | Launcher (`dmenu`) |
-| **Alt + h / v** | Split horizontal / vertical |
+| **Alt + ; / v** | Split horizontal / vertical |
 | **Alt + s / w / e** | Stacking / tabbed / toggle-split layout |
 | **Alt + f** | Fullscreen |
 | **Alt + Shift + space** | Toggle floating |
 | **Alt + a** | Focus parent container |
-| **Alt + arrows** (or `j k l ;`) | Focus window |
-| **Alt + Shift + arrows** (or `j k l ;`) | Move window |
+| **Alt + arrows** (or `h j k l`) | Focus window |
+| **Alt + Shift + arrows** (or `h j k l`) | Move window |
 | **Alt + 1…0** | Switch workspace |
 | **Alt + Shift + 1…0** | Move container to workspace |
 | **Alt + r** | Resize mode (arrows, then `Return`/`Esc`) |
@@ -172,7 +194,7 @@ all; **`rxvt-unicode` (`urxvt`)** is installed as an equally-safe alternative.
 Swap the one line if you prefer:
 
 ```i3config
-set $term urxvt -fn "xft:DejaVu Sans Mono:pixelsize=14"
+set $term urxvt -fn "xft:Iosevka Term:pixelsize=14"
 ```
 
 (Other protocol-free choices: `st`, `xfce4-terminal`, `gnome-terminal`.)
@@ -213,6 +235,12 @@ EndSection
 Reboot (or restart the display manager) to apply. Override the layout with
 `XKB_LAYOUT=de ./install-i3.sh --persistent-keys`.
 
+The file is written **mode 0644**: Xorg runs *rootless* (as your user) on modern
+GDM, and a `0600` root-owned file is silently ignored by the X server — which is
+exactly why the swap used to reset after suspend/resume. The installer also
+mirrors the options into GNOME's `dconf` (`org.gnome.desktop.input-sources
+xkb-options`) so any GNOME component that re-applies the layout keeps the swaps.
+
 ---
 
 ## 9. Verifying the keyboard mapping
@@ -233,6 +261,9 @@ In `xev`: **Caps Lock** → `Escape`; **Escape** → `Caps_Lock`; **Alt** → `S
 
 * **Terminal / launcher / browser:** edit `set $term`, `set $menu`, `set $browser`
   in `~/.config/i3/config`.
+* **Terminal font / clipboard:** `~/.Xresources` (then `xrdb -merge ~/.Xresources`,
+  or just reload i3). The font family is `XTerm*faceName`; copy/paste is
+  `XTerm*selectToClipboard` + the `XTerm*VT100.Translations` block.
 * **Bar:** `bar { … }` — it's `position bottom` and uses the default `dock` mode
   (always visible). Change `position` to `top`, or set `mode hide` if you ever
   want it to auto-hide.
@@ -274,6 +305,15 @@ run `setxkbmap -option "caps:swapescape,altwin:swap_alt_win"` manually.
 **Neovim key handling looks wrong.** Use `xterm`/`rxvt-unicode`, not
 Alacritty/kitty/WezTerm/foot (§6.1).
 
+**Can't copy/paste in the terminal.** `~/.Xresources` must be loaded — reload i3
+(**Alt + Shift + c**) or run `xrdb -merge ~/.Xresources`. Then: select with the
+mouse (goes to CLIPBOARD), `Ctrl+Shift+C` to copy, `Ctrl+Shift+V` to paste
+(middle-click and `Shift+Insert` also paste).
+
+**Terminal font is not Iosevka.** Confirm it is installed with `fc-list | grep -i
+Iosevka`; if not, re-run `./install-i3.sh` (or `--no-install` to only fetch the
+font). Check the family name in `~/.Xresources` matches (`Iosevka Term`).
+
 **Tray applet (network/audio) missing.** The stock config launches `nm-applet`
 and `dex --autostart` (which starts XDG autostart entries, e.g. blueman). Verify
 the packages are present (§5).
@@ -292,4 +332,6 @@ sudo apt-get remove --autoremove i3-wm i3status i3lock dex \
     blueman pasystray lxpolkit dunst
 # and, to remove the system-wide keymap file:
 sudo rm -f /etc/X11/xorg.conf.d/00-keyboard.conf
+# and the downloaded font:
+rm -rf ~/.local/share/fonts/iosevka && fc-cache -f
 ```

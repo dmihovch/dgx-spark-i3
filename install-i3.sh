@@ -14,16 +14,22 @@
 #         physical Alt -> Super (Mod4) ==> i3's $mod key
 #         physical Win -> Alt   (Mod1)
 #    * $mod = Mod4 (so all the stock Mod1+<key> bindings now use Alt)
-#    * Meta+Return = simple terminal (xterm)   [neovim friendly]
+#    * vim-style navigation: h=left, j=down, k=up, l=right
+#         (the old "split h" binding moved to $mod+semicolon)
+#    * Meta+Return = simple terminal (xterm, Iosevka Term)   [neovim friendly]
 #    * Meta+b      = firefox
 #    * status bar on the BOTTOM and never auto-hides
 #    * no compositor / no window fading
 #
+#  It also installs the Iosevka font and writes ~/.Xresources, which gives xterm
+#  its font and working clipboard copy/paste (Ctrl+Shift+C / Ctrl+Shift+V).
+#
 #  Usage:
-#    ./install-i3.sh                     # install packages + write configs
+#    ./install-i3.sh                     # install packages + font + write configs
 #    ./install-i3.sh --persistent-keys   # (default) system-wide keymap file
 #    ./install-i3.sh --emit-config DIR   # just (re)generate config files into DIR
 #    ./install-i3.sh --no-install        # skip apt, only write config files
+#    ./install-i3.sh --no-font           # skip downloading the Iosevka font
 #
 #  Safe to re-run; existing configs are backed up with a timestamp.
 # =============================================================================
@@ -36,11 +42,19 @@ set -euo pipefail
 XKB_OPTIONS="caps:swapescape,altwin:swap_alt_win"
 XKB_LAYOUT="${XKB_LAYOUT:-us}"   # used only for the optional system-wide file
 
+# Iosevka font (downloaded from the upstream GitHub release).
+# The release asset name is e.g. "PkgTTC-SGr-IosevkaTerm" (terminal cut) or
+# "PkgTTC-SGr-Iosevka" (code-editor cut); see the release's "Quick picker".
+IOSEVKA_VERSION="${IOSEVKA_VERSION:-34.9.0}"
+IOSEVKA_ASSET="${IOSEVKA_ASSET:-PkgTTC-SGr-IosevkaTerm}"
+TERM_FONT_FAMILY="${TERM_FONT_FAMILY:-Iosevka Term}"  # family xterm uses
+
 # ---------------------------------------------------------------------------
 #  Argument parsing
 # ---------------------------------------------------------------------------
 EMIT_ONLY=0
 DO_INSTALL=1
+DO_FONT=1
 PERSISTENT_KEYS=1
 EMIT_DIR=""
 
@@ -48,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --emit-config)     EMIT_ONLY=1; EMIT_DIR="${2:-$PWD}"; shift 2 ;;
         --no-install)      DO_INSTALL=0; shift ;;
+        --no-font)         DO_FONT=0; shift ;;
         --persistent-keys) PERSISTENT_KEYS=1; shift ;;
         -h|--help)         sed -n '2,40p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -93,13 +108,20 @@ write_i3_config() {
 #             physical Alt -> Super (Mod4)  => this is the i3 modifier, $mod
 #             physical Win -> Alt   (Mod1)
 #    * $mod is Mod4, so every stock "Mod1+<key>" binding below is now "$mod+<key>".
-#    * $mod+Return starts a simple terminal (xterm); $mod+b starts firefox.
+#    * Navigation uses vim keys: h=left, j=down, k=up, l=right
+#      (so the old "split h" binding moved to $mod+semicolon).
+#    * $mod+Return starts xterm (Iosevka Term); its font and clipboard
+#      copy/paste bindings live in ~/.Xresources, loaded with xrdb below.
+#    * $mod+b starts firefox.
 #    * i3bar sits on the BOTTOM of the screen and never auto-hides.
 #    * No compositor, so no window fading.
 # ---------------------------------------------------------------------------
 
 # Apply the keyboard preferences to the whole X session.
 exec --no-startup-id setxkbmap -option "caps:swapescape,altwin:swap_alt_win"
+
+# Load X resources: xterm font (Iosevka Term) and clipboard copy/paste bindings.
+exec --no-startup-id xrdb -merge ~/.Xresources
 
 # i3 modifier = physical Alt (which now emits Super / Mod4).
 set $mod Mod4
@@ -135,11 +157,11 @@ bindsym XF86AudioMute exec --no-startup-id pactl set-sink-mute @DEFAULT_SINK@ to
 bindsym XF86AudioMicMute exec --no-startup-id pactl set-source-mute @DEFAULT_SOURCE@ toggle && $refresh_i3status
 
 # use these keys for focus, movement, and resize directions when reaching for
-# the arrows is not convenient
-set $up l
-set $down k
-set $left j
-set $right semicolon
+# the arrows is not convenient (vim-style: h=left, j=down, k=up, l=right)
+set $up k
+set $down j
+set $left h
+set $right l
 
 # use Mouse+Mod1 to drag floating windows to their wanted position
 # (Mod1 is the physical Win key, which now acts as Alt)
@@ -151,7 +173,8 @@ tiling_drag modifier titlebar
 
 # start a terminal
 # (simple terminal that does not use the kitty keyboard protocol -> neovim/tmux safe)
-set $term xterm -fa "DejaVu Sans Mono" -fs 18
+# Font (Iosevka Term) and clipboard settings come from ~/.Xresources.
+set $term xterm
 bindsym $mod+Return exec $term
 
 # start the web browser
@@ -194,7 +217,8 @@ bindsym $mod+Shift+Up move up
 bindsym $mod+Shift+Right move right
 
 # split in horizontal orientation
-bindsym $mod+h split h
+# (moved off "h" so h/j/k/l can be used for vim-style navigation)
+bindsym $mod+semicolon split h
 
 # split in vertical orientation
 bindsym $mod+v split v
@@ -379,6 +403,74 @@ XINITRC
     chmod +x "$dest"
 }
 
+write_xresources() {
+    local dest="$1"
+    cat > "$dest" <<XRESOURCES
+! ~/.Xresources  —  managed by install-i3.sh
+!
+! Loaded by the i3 config (exec xrdb -merge ~/.Xresources) and by ~/.xinitrc.
+! Re-apply after editing with:  xrdb -merge ~/.Xresources
+
+! ---------------------------------------------------------------------------
+!  xterm: font
+! ---------------------------------------------------------------------------
+! "Iosevka Term" is the terminal-optimised cut of Iosevka (installed by
+! install-i3.sh into ~/.local/share/fonts). Use "Iosevka" for the narrower
+! default cut, or "Iosevka Fixed" for a strictly monospaced cut.
+XTerm*faceName: ${TERM_FONT_FAMILY}
+XTerm*faceSize: 18
+
+! ---------------------------------------------------------------------------
+!  xterm: clipboard (copy / paste)
+! ---------------------------------------------------------------------------
+! Put mouse selections on the CLIPBOARD as well as PRIMARY, so a selection can
+! be pasted with Ctrl+V in other applications.
+XTerm*selectToClipboard: true
+
+! Ctrl+Shift+C = copy, Ctrl+Shift+V = paste.
+! (The xterm defaults still work too: middle-click pastes PRIMARY, and
+!  Shift+Insert pastes PRIMARY/CLIPBOARD.)
+XTerm*VT100.Translations: #override \n\\
+    Ctrl Shift <Key>C: copy-selection(CLIPBOARD) \n\\
+    Ctrl Shift <Key>V: insert-selection(CLIPBOARD)
+XRESOURCES
+}
+
+# ---------------------------------------------------------------------------
+#  Iosevka font (for the terminal)
+# ---------------------------------------------------------------------------
+install_iosevka_font() {
+    local font_dir="$TARGET_HOME/.local/share/fonts/iosevka"
+    local url="https://github.com/be5invis/Iosevka/releases/download/v${IOSEVKA_VERSION}/${IOSEVKA_ASSET}-${IOSEVKA_VERSION}.zip"
+
+    if command -v fc-list >/dev/null 2>&1 && fc-list 2>/dev/null | grep -qi 'Iosevka'; then
+        log "An Iosevka font is already installed."
+        return 0
+    fi
+
+    log "Downloading Iosevka ${IOSEVKA_VERSION} (${IOSEVKA_ASSET})…"
+    local tmp
+    tmp="$(mktemp -d)"
+    if ! curl -fL --retry 3 -o "$tmp/iosevka.zip" "$url"; then
+        warn "Could not download Iosevka from: $url"
+        warn "Install it manually and set the family in ~/.Xresources."
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    log "Installing fonts into $font_dir…"
+    mkdir -p "$font_dir"
+    unzip -o -q "$tmp/iosevka.zip" -d "$tmp/extract"
+    find "$tmp/extract" -type f \( -iname '*.ttf' -o -iname '*.ttc' -o -iname '*.otf' \) \
+        -exec cp -f {} "$font_dir/" \;
+    rm -rf "$tmp"
+
+    if command -v fc-cache >/dev/null 2>&1; then
+        fc-cache -f "$font_dir" >/dev/null 2>&1 || true
+    fi
+    log "Iosevka installed. Terminal family: '$TERM_FONT_FAMILY'."
+}
+
 # ---------------------------------------------------------------------------
 #  EMIT-ONLY mode
 # ---------------------------------------------------------------------------
@@ -387,6 +479,7 @@ if [[ ${EMIT_ONLY} -eq 1 ]]; then
     write_i3_config       "$EMIT_DIR/config"
     write_i3status_config "$EMIT_DIR/i3status.conf"
     write_xinitrc         "$EMIT_DIR/xinitrc"
+    write_xresources      "$EMIT_DIR/Xresources"
     log "Config files written to: $EMIT_DIR"
     ls -l "$EMIT_DIR"
     exit 0
@@ -460,6 +553,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+#  Iosevka font
+# ---------------------------------------------------------------------------
+if [[ ${DO_FONT} -eq 1 ]]; then
+    install_iosevka_font || true
+else
+    log "Skipping Iosevka font install (--no-font)."
+fi
+
+# ---------------------------------------------------------------------------
 #  Write configs (with backups)
 # ---------------------------------------------------------------------------
 backup_if_exists() {
@@ -478,10 +580,12 @@ mkdir -p "$TARGET_HOME/.config/i3" "$TARGET_HOME/.config/i3status"
 backup_if_exists "$TARGET_HOME/.config/i3/config"
 backup_if_exists "$TARGET_HOME/.config/i3status/config"
 backup_if_exists "$TARGET_HOME/.xinitrc"
+backup_if_exists "$TARGET_HOME/.Xresources"
 
 write_i3_config       "$TARGET_HOME/.config/i3/config"
 write_i3status_config "$TARGET_HOME/.config/i3status/config"
 write_xinitrc         "$TARGET_HOME/.xinitrc"
+write_xresources      "$TARGET_HOME/.Xresources"
 
 if [[ ${EUID} -eq 0 && "$TARGET_USER" != "root" ]]; then
     chown -R "$TARGET_USER":"$TARGET_USER" "$TARGET_HOME/.config" "$TARGET_HOME/.xinitrc" 2>/dev/null || true
@@ -506,7 +610,21 @@ EndSection
 EOF
     run_priv cp "$TMP_KB" /etc/X11/xorg.conf.d/00-keyboard.conf
     rm -f "$TMP_KB"
-    warn "Persistent keymap written. A full log out / reboot is needed for it to apply everywhere."
+    # Xorg runs rootless (as the logged-in user) on modern GDM, so the file must
+    # be world-readable or the X server silently ignores it.
+    run_priv chmod 0644 /etc/X11/xorg.conf.d/00-keyboard.conf
+    warn "Persistent keymap written (mode 0644). A full log out / reboot is needed for it to apply everywhere."
+
+    # Keep GNOME's own input-source settings in sync, so any GNOME component
+    # (gsd-keyboard, ibus, …) that re-applies the layout keeps the swaps too.
+    if command -v gsettings >/dev/null 2>&1; then
+        if gsettings set org.gnome.desktop.input-sources xkb-options \
+                "['caps:swapescape', 'altwin:swap_alt_win']" 2>/dev/null; then
+            log "Updated GNOME xkb-options (dconf)."
+        else
+            warn "Could not update GNOME xkb-options (no dconf session?)."
+        fi
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -522,14 +640,22 @@ cat <<EOF
     ~/.config/i3/config          (vanilla i3 config + your modifications)
     ~/.config/i3status/config    (status bar)
     ~/.xinitrc                   (for 'startx' from a TTY)
+    ~/.Xresources                (xterm font + clipboard copy/paste)
 
   Keyboard, as requested:
     Caps Lock  <->  Escape
     Physical Alt  -> Super (Mod4)  == your i3 \$mod key
     Physical Win  -> Alt   (Mod1)
 
-  i3:  \$mod+Return = xterm (neovim-friendly),  \$mod+b = firefox
+  i3:  \$mod+Return = xterm (Iosevka Term, neovim-friendly),  \$mod+b = firefox
+       navigation is vim-style: h=left  j=down  k=up  l=right
+       (split-horizontal is now \$mod+semicolon)
        bar is on the bottom, no compositor / no window fading.
+
+  Terminal:
+    Font:      $TERM_FONT_FAMILY
+    Copy:      select with the mouse, or Ctrl+Shift+C
+    Paste:     Ctrl+Shift+V (also middle-click / Shift+Insert)
 
   Next steps:
     1. Log out, then pick the "i3" session at the login screen
@@ -539,6 +665,7 @@ cat <<EOF
            setxkbmap -print | grep -o 'caps:swapescape,altwin:swap_alt_win'
            xev   # press Caps/Esc/Alt/Win and inspect keysyms
 
-  System-wide keymap written: it survives suspend/resume and covers the greeter.
+  System-wide keymap written (mode 0644): it survives suspend/resume and covers
+  the greeter.
 =============================================================================
 EOF
